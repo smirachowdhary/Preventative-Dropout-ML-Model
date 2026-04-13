@@ -398,6 +398,7 @@ export default function OnTrackApp() {
   const [error, setError] = useState("");
   const [duplicateNotice, setDuplicateNotice] = useState<string[]>([]);
   const [studentNotes, setStudentNotes] = useState<Record<string, string>>({});
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
     try {
@@ -417,6 +418,15 @@ export default function OnTrackApp() {
       console.error("Failed to save notes to localStorage", err);
     }
   }, [studentNotes]);
+
+  useEffect(() => {
+    async function getUser() {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user);
+    }
+  
+    getUser();
+  }, []);
 
   async function handleFilesUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -1199,36 +1209,61 @@ export default function OnTrackApp() {
                 <div className="text-sm text-slate-500">Student support intelligence</div>
               </div>
             </div>
-
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">
-              <Upload className="h-4 w-4" />
-              Upload files
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                multiple
-                className="hidden"
-                onChange={handleFilesUpload}
-              />
-            </label>
+  
+            <div className="flex items-center gap-3">
+              {user ? (
+                <span className="hidden text-sm text-slate-500 md:inline">{user.email}</span>
+              ) : (
+                <a
+                  href="/login"
+                  className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Log in to save
+                </a>
+              )}
+  
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-800">
+                <Upload className="h-4 w-4" />
+                Upload files
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  multiple
+                  className="hidden"
+                  onChange={handleFilesUpload}
+                />
+              </label>
+  
+              {user ? (
+                <button
+                  onClick={async () => {
+                    await supabase.auth.signOut();
+                    window.location.reload();
+                  }}
+                  className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Sign out
+                </button>
+              ) : null}
+            </div>
           </div>
-
+  
           <div className="flex flex-wrap items-center gap-2">
             <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>
               <LayoutGrid className="mr-2 inline h-4 w-4" />
               Overview
             </TabButton>
-
+  
             <TabButton active={activeTab === "files"} onClick={() => setActiveTab("files")}>
               <FileSpreadsheet className="mr-2 inline h-4 w-4" />
               Files
             </TabButton>
-
+  
             <TabButton active={activeTab === "students"} onClick={() => setActiveTab("students")}>
               <Users className="mr-2 inline h-4 w-4" />
               Students
             </TabButton>
-
+  
             <TabButton
               active={activeTab === "interventions"}
               onClick={() => setActiveTab("interventions")}
@@ -1239,14 +1274,14 @@ export default function OnTrackApp() {
           </div>
         </div>
       </div>
-
+  
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-8">
         {error ? (
           <Card className="mb-6 rounded-[24px] border border-red-200 bg-red-50 shadow-sm">
             <CardContent className="p-4 text-sm text-red-700">{error}</CardContent>
           </Card>
         ) : null}
-
+  
         {duplicateNotice.length ? (
           <Card className="mb-6 rounded-[24px] border border-amber-200 bg-amber-50 shadow-sm">
             <CardContent className="p-4 text-sm text-amber-800">
@@ -1255,7 +1290,7 @@ export default function OnTrackApp() {
             </CardContent>
           </Card>
         ) : null}
-
+  
         {activeTab === "overview" && renderOverviewTab()}
         {activeTab === "files" && renderFilesTab()}
         {activeTab === "students" && renderStudentsTab()}
