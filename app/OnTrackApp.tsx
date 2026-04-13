@@ -452,20 +452,37 @@ export default function OnTrackApp() {
       }
     
       try {
-        const filePath = `${Date.now()}-${file.name}`;
+        const currentUser = user;
       
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("uploads")
-          .upload(filePath, file, { upsert: false });
+        let filePath: string | null = null;
       
-        if (uploadError) {
-          alert("UPLOAD FAILED: " + uploadError.message);
-          console.error(uploadError);
-          uploadFailures.push(file.name);
-          continue;
+        if (currentUser) {
+          filePath = `${Date.now()}-${file.name}`;
+      
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from("uploads")
+            .upload(filePath, file, { upsert: false });
+      
+          if (uploadError) {
+            alert("UPLOAD FAILED: " + uploadError.message);
+            console.error(uploadError);
+            uploadFailures.push(file.name);
+            continue;
+          }
+      
+          const { error: dbError } = await supabase.from("datasets").insert({
+            user_id: currentUser.id,
+            file_name: file.name,
+            storage_path: filePath,
+          });
+      
+          if (dbError) {
+            alert("DATABASE SAVE FAILED: " + dbError.message);
+            console.error(dbError);
+          }
+      
+          console.log("Uploaded to Supabase:", uploadData);
         }
-      
-        alert("UPLOAD SUCCESS: " + file.name);
       
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
@@ -489,9 +506,14 @@ export default function OnTrackApp() {
           lastModified: file.lastModified,
           fingerprint,
           students,
-          storagePath: filePath,
+          storagePath: filePath ?? undefined,
         });
       
+        if (currentUser) {
+          alert("SAVED TO ACCOUNT: " + file.name);
+        } else {
+          alert("LOADED IN GUEST MODE: " + file.name);
+        }
       } catch (err) {
         console.error("File processing failed:", err);
         alert("Processing failed");
