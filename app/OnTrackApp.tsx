@@ -443,36 +443,35 @@ export default function OnTrackApp() {
     
       try {
         const filePath = `${Date.now()}-${file.name}`;
-    
+      
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from("uploads")
-          .upload(filePath, file, {
-            upsert: false,
-          });
-    
+          .upload(filePath, file, { upsert: false });
+      
         if (uploadError) {
-          console.error("Supabase upload failed:", uploadError);
+          alert("UPLOAD FAILED: " + uploadError.message);
+          console.error(uploadError);
           uploadFailures.push(file.name);
           continue;
         }
-    
-        console.log("Uploaded to Supabase:", uploadData);
-    
+      
+        alert("UPLOAD SUCCESS: " + file.name);
+      
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
-    
+      
         if (!firstSheetName) continue;
-    
+      
         const worksheet = workbook.Sheets[firstSheetName];
         const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
-    
+      
         if (!jsonRows.length) continue;
-    
+      
         const students = parseStudents(jsonRows, file.name);
-    
+      
         if (!students.length) continue;
-    
+      
         newDatasets.push({
           id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           fileName: file.name,
@@ -482,8 +481,10 @@ export default function OnTrackApp() {
           students,
           storagePath: filePath,
         });
+      
       } catch (err) {
         console.error("File processing failed:", err);
+        alert("Processing failed");
         uploadFailures.push(file.name);
       }
     }
