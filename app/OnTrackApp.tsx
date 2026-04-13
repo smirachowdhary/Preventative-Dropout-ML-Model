@@ -1,5 +1,6 @@
 "use client";
 
+import { supabase } from "@/lib/supabase";
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -165,6 +166,17 @@ function buildDrivers(student: {
 
   return drivers;
 }
+
+async function uploadFileToSupabase(file: File) {
+    const filePath = `excel/${Date.now()}-${file.name}`;
+  
+    const { data, error } = await supabase.storage
+      .from("uploads")
+      .upload(filePath, file, { upsert: false });
+  
+    if (error) throw error;
+    return data;
+  }
 
 function buildSuggestions(student: {
   attendance: number;
@@ -407,51 +419,52 @@ export default function OnTrackApp() {
     const skippedDuplicates: string[] = [];
 
     for (const file of files) {
-      const fingerprint = `${file.name}__${file.size}__${file.lastModified}`;
+        const { data, error } = await supabase.storage
+          .from("uploads")
+          .upload(`files/${Date.now()}-${file.name}`, file);
 
-      const alreadyExists = datasets.some((dataset) => dataset.fingerprint === fingerprint);
-      if (alreadyExists) {
-        skippedDuplicates.push(file.name);
-        continue;
+        if (error) {
+          console.error("Upload failed:", error);
+        } else {
+          console.log("Uploaded to Supabase:", data);
+        }
+
+        const fingerprint = `${file.name}__${file.size}__${file.lastModified}`;
+      
+        const alreadyExists = datasets.some((dataset) => dataset.fingerprint === fingerprint);
+        if (alreadyExists) {
+          skippedDuplicates.push(file.name);
+          continue;
+        }
+      
+        try {      
+          const data = await file.arrayBuffer();
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+      
+          if (!firstSheetName) continue;
+      
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
+      
+          if (!jsonRows.length) continue;
+      
+          const students = parseStudents(jsonRows, file.name);
+      
+          if (!students.length) continue;
+      
+          newDatasets.push({
+            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            fileName: file.name,
+            fileSize: file.size,
+            lastModified: file.lastModified,
+            fingerprint,
+            students,
+          });
+        } catch (err) {
+          console.error(err);
+        }
       }
-
-      try {
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-
-        if (!firstSheetName) continue;
-
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
-
-        if (!jsonRows.length) continue;
-
-        const students = parseStudents(jsonRows, file.name);
-
-        if (!students.length) continue;
-
-        newDatasets.push({
-          id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          fileName: file.name,
-          fileSize: file.size,
-          lastModified: file.lastModified,
-          fingerprint,
-          students,
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    if (skippedDuplicates.length) {
-      setDuplicateNotice(skippedDuplicates);
-    }
-
-    if (!newDatasets.length && !skippedDuplicates.length) {
-      setError("Could not read any uploaded files. Try valid .xlsx, .xls, or .csv files.");
-      return;
-    }
 
     if (newDatasets.length) {
       setDatasets((prev) => {
