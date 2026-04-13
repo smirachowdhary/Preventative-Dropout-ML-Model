@@ -86,6 +86,16 @@ type UploadedDataset = {
   students: Student[];
 };
 
+type Dataset = {
+    id: string;
+    fileName: string;
+    fileSize: number;
+    lastModified: number;
+    fingerprint: string;
+    students: any[];
+    storagePath?: string;
+  };
+
 function normalizeKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -415,56 +425,68 @@ export default function OnTrackApp() {
     setError("");
     setDuplicateNotice([]);
 
-    const newDatasets: UploadedDataset[] = [];
+    const newDatasets: Dataset[] = [];
     const skippedDuplicates: string[] = [];
-
+    const uploadFailures: string[] = [];
+    
     for (const file of files) {
-        const { data, error } = await supabase.storage
+      const fingerprint = `${file.name}__${file.size}__${file.lastModified}`;
+    
+      const alreadyExists = datasets.some(
+        (dataset) => dataset.fingerprint === fingerprint
+      );
+    
+      if (alreadyExists) {
+        skippedDuplicates.push(file.name);
+        continue;
+      }
+    
+      try {
+        const filePath = `${Date.now()}-${file.name}`;
+    
+        const { data: uploadData, error: uploadError } = await supabase.storage
           .from("uploads")
-          .upload(`files/${Date.now()}-${file.name}`, file);
-
-        if (error) {
-          console.error("Upload failed:", error);
-        } else {
-          console.log("Uploaded to Supabase:", data);
-        }
-
-        const fingerprint = `${file.name}__${file.size}__${file.lastModified}`;
-      
-        const alreadyExists = datasets.some((dataset) => dataset.fingerprint === fingerprint);
-        if (alreadyExists) {
-          skippedDuplicates.push(file.name);
+          .upload(filePath, file, {
+            upsert: false,
+          });
+    
+        if (uploadError) {
+          console.error("Supabase upload failed:", uploadError);
+          uploadFailures.push(file.name);
           continue;
         }
-      
-        try {      
-          const data = await file.arrayBuffer();
-          const workbook = XLSX.read(data, { type: "array" });
-          const firstSheetName = workbook.SheetNames[0];
-      
-          if (!firstSheetName) continue;
-      
-          const worksheet = workbook.Sheets[firstSheetName];
-          const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
-      
-          if (!jsonRows.length) continue;
-      
-          const students = parseStudents(jsonRows, file.name);
-      
-          if (!students.length) continue;
-      
-          newDatasets.push({
-            id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            fileName: file.name,
-            fileSize: file.size,
-            lastModified: file.lastModified,
-            fingerprint,
-            students,
-          });
-        } catch (err) {
-          console.error(err);
-        }
+    
+        console.log("Uploaded to Supabase:", uploadData);
+    
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+    
+        if (!firstSheetName) continue;
+    
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
+    
+        if (!jsonRows.length) continue;
+    
+        const students = parseStudents(jsonRows, file.name);
+    
+        if (!students.length) continue;
+    
+        newDatasets.push({
+          id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          fileName: file.name,
+          fileSize: file.size,
+          lastModified: file.lastModified,
+          fingerprint,
+          students,
+          storagePath: filePath,
+        });
+      } catch (err) {
+        console.error("File processing failed:", err);
+        uploadFailures.push(file.name);
       }
+    }
 
     if (newDatasets.length) {
       setDatasets((prev) => {
