@@ -96,6 +96,41 @@ type Dataset = {
     storagePath?: string;
   };
 
+type SortKey = "student" | "grade" | "attendance" | "gpa" | "risk" | "file";
+type SortDirection = "asc" | "desc";
+
+const riskRank: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+function parsePercent(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const cleaned = value.replace("%", "").trim();
+    const num = Number(cleaned);
+    return Number.isNaN(num) ? -Infinity : num;
+  }
+  return -Infinity;
+}
+
+function parseNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const num = Number(value.trim());
+    return Number.isNaN(num) ? -Infinity : num;
+  }
+  return -Infinity;
+}
+
+function compareText(a: unknown, b: unknown) {
+  return String(a ?? "").localeCompare(String(b ?? ""), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
 function normalizeKey(key: string) {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -399,6 +434,8 @@ export default function OnTrackApp() {
   const [duplicateNotice, setDuplicateNotice] = useState<string[]>([]);
   const [studentNotes, setStudentNotes] = useState<Record<string, string>>({});
   const [user, setUser] = useState<any>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("student");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   useEffect(() => {
     try {
@@ -567,6 +604,14 @@ export default function OnTrackApp() {
     }
   }
 
+  function handleSort(key: SortKey) {
+  if (sortKey === key) {
+    setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+  } else {
+    setSortKey(key);
+    setSortDirection("asc");
+  }
+  }
   const allStudents = useMemo(() => datasets.flatMap((dataset) => dataset.students), [datasets]);
 
   const visibleStudents = useMemo(() => {
@@ -586,18 +631,73 @@ export default function OnTrackApp() {
     });
   }, [visibleStudents, query, gradeFilter]);
 
+  const sortedStudents = useMemo(() => {
+    const getRiskLabel = (risk: number) => {
+      if (risk >= 70) return "High";
+      if (risk >= 35) return "Moderate";
+      return "Low";
+    };
+
+    const riskOrder: Record<string, number> = {
+      High: 0,
+      Moderate: 1,
+      Low: 2,
+    };
+
+    return [...filteredStudents].sort((a, b) => {
+      let result = 0;
+
+      switch (sortKey) {
+        case "student":
+          result = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+          break;
+
+        case "grade":
+          result = String(a.grade).localeCompare(String(b.grade), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+          break;
+
+        case "attendance":
+          result = a.attendance - b.attendance;
+          break;
+
+        case "gpa":
+          result = a.gpa - b.gpa;
+          break;
+
+        case "risk":
+          result = riskOrder[getRiskLabel(a.risk)] - riskOrder[getRiskLabel(b.risk)];
+          break;
+
+        case "file":
+          result = a.sourceFile.localeCompare(b.sourceFile, undefined, {
+            sensitivity: "base",
+            numeric: true,
+          });
+          break;
+
+        default:
+          result = 0;
+      }
+
+      return sortDirection === "asc" ? result : -result;
+    });
+  }, [filteredStudents, sortKey, sortDirection]);
+
   useEffect(() => {
-    if (!filteredStudents.length) {
+    if (!sortedStudents.length) {
       setSelectedId("");
       return;
     }
-    const exists = filteredStudents.some((student) => student.id === selectedId);
-    if (!exists) setSelectedId(filteredStudents[0].id);
-  }, [filteredStudents, selectedId]);
+    const exists = sortedStudents.some((student) => student.id === selectedId);
+    if (!exists) setSelectedId(sortedStudents[0].id);
+  }, [sortedStudents, selectedId]);
 
   const selectedStudent =
-    filteredStudents.find((student) => student.id === selectedId) ||
-    filteredStudents[0] ||
+    sortedStudents.find((student) => student.id === selectedId) ||
+    sortedStudents[0] ||
     visibleStudents[0];
 
   const selectedStudentNote = selectedStudent ? studentNotes[selectedStudent.id] ?? "" : "";
@@ -668,10 +768,10 @@ export default function OnTrackApp() {
 
             <div className="mt-6 max-w-3xl">
               <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">
-                See which students may need help earlier.
+                Preventative Student Dropout Model
               </h1>
               <p className="mt-4 text-base text-slate-300 md:text-lg">
-                Upload one or more student files, compare cohorts, and keep counselor notes attached
+                Upload one or more student files, compare cohorts, and keep reccomendations attached
                 to individual students.
               </p>
             </div>
@@ -713,7 +813,7 @@ export default function OnTrackApp() {
 
           <Card className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
             <CardHeader>
-              <CardTitle>Workspace controls</CardTitle>
+              <CardTitle>Workspace Controls</CardTitle>
               <CardDescription>Choose how uploaded files are shown</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -988,17 +1088,34 @@ export default function OnTrackApp() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Student</TableHead>
-                    <TableHead>Grade</TableHead>
-                    <TableHead>Attendance</TableHead>
-                    <TableHead>GPA</TableHead>
-                    <TableHead>Risk</TableHead>
-                    <TableHead>File</TableHead>
+                    <TableHead onClick={() => handleSort("student")} className="cursor-pointer">
+                      Student {sortKey === "student" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
+
+                    <TableHead onClick={() => handleSort("grade")} className="cursor-pointer">
+                      Grade {sortKey === "grade" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
+
+                    <TableHead onClick={() => handleSort("attendance")} className="cursor-pointer">
+                      Attendance {sortKey === "attendance" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
+
+                    <TableHead onClick={() => handleSort("gpa")} className="cursor-pointer">
+                      GPA {sortKey === "gpa" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
+
+                    <TableHead onClick={() => handleSort("risk")} className="cursor-pointer">
+                      Risk {sortKey === "risk" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
+
+                    <TableHead onClick={() => handleSort("file")} className="cursor-pointer">
+                      File {sortKey === "file" ? (sortDirection === "asc" ? "↑" : "↓") : ""}
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredStudents.length ? (
-                    filteredStudents.map((student) => (
+                    sortedStudents.map((student) => (
                       <TableRow
                         key={student.id}
                         className={`cursor-pointer hover:bg-slate-50 ${
@@ -1228,7 +1345,7 @@ export default function OnTrackApp() {
               </div>
               <div>
                 <div className="text-lg font-semibold tracking-tight">OnTrack</div>
-                <div className="text-sm text-slate-500">Student support intelligence</div>
+                <div className="text-sm text-slate-500">Student Support Intelligence</div>
               </div>
             </div>
   
