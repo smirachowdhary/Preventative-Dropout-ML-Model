@@ -465,6 +465,70 @@ export default function OnTrackApp() {
     getUser();
   }, []);
 
+  useEffect(() => {
+    async function loadSavedDatasets() {
+      if (!user) return;
+
+      const { data: savedRows, error } = await supabase
+        .from("datasets")
+        .select("id, file_name, storage_path")
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Failed to load saved datasets:", error);
+        return;
+      }
+
+      const restoredDatasets: UploadedDataset[] = [];
+
+      for (const row of savedRows ?? []) {
+        if (!row.storage_path) continue;
+
+        const { data, error: downloadError } = await supabase.storage
+          .from("uploads")
+          .download(row.storage_path);
+
+        if (downloadError || !data) {
+          console.error("Failed to download file:", row.storage_path, downloadError);
+          continue;
+        }
+
+        try {
+          const buffer = await data.arrayBuffer();
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          if (!firstSheetName) continue;
+
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
+          if (!jsonRows.length) continue;
+
+          const students = parseStudents(jsonRows, row.file_name);
+          if (!students.length) continue;
+
+          restoredDatasets.push({
+            id: row.id,
+            fileName: row.file_name,
+            fileSize: data.size ?? 0,
+            lastModified: Date.now(),
+            fingerprint: `${row.file_name}-${row.storage_path}`,
+            students,
+          });
+        } catch (err) {
+          console.error("Failed to rebuild dataset from storage:", err);
+        }
+      }
+
+      setDatasets(restoredDatasets);
+
+      if (restoredDatasets.length && !selectedId) {
+        setSelectedId(restoredDatasets[0].students[0]?.id ?? "");
+      }
+    }
+
+    loadSavedDatasets();
+  }, [user]);
+
   async function handleFilesUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
     if (!files.length) return;
