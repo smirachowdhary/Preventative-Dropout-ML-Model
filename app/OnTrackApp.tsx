@@ -647,7 +647,7 @@ export default function OnTrackApp() {
             <div className="mt-8 flex flex-wrap gap-3">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-medium text-slate-950 hover:bg-slate-100">
                 <Upload className="h-4 w-4" />
-                Add student files
+                LOCAL TEST 123
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
