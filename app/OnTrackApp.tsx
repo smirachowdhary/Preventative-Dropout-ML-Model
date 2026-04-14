@@ -52,7 +52,6 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { p } from "framer-motion/client";
 
 type Trend = "improving" | "stable" | "worsening";
 type TabKey = "overview" | "files" | "students" | "interventions";
@@ -85,16 +84,6 @@ type UploadedDataset = {
   fingerprint: string;
   students: Student[];
 };
-
-type Dataset = {
-    id: string;
-    fileName: string;
-    fileSize: number;
-    lastModified: number;
-    fingerprint: string;
-    students: any[];
-    storagePath?: string;
-  };
 
 type SortKey = "student" | "grade" | "attendance" | "gpa" | "risk" | "file";
 type SortDirection = "asc" | "desc";
@@ -422,6 +411,35 @@ function TabButton({
 
 const CHART_COLORS = ["#10b981", "#f59e0b", "#ef4444"];
 
+function isDuplicateDatasetFile(
+  file: File,
+  existingDatasets: Array<
+    Pick<UploadedDataset, "fingerprint" | "fileName" | "fileSize" | "lastModified">
+  >,
+  seenInThisBatch: Set<string>
+) {
+  const strictFingerprint = `${file.name}__${file.size}__${file.lastModified}`;
+  const fallbackFingerprint = `${file.name}__${file.size}`;
+
+  if (seenInThisBatch.has(strictFingerprint) || seenInThisBatch.has(fallbackFingerprint)) {
+    return true;
+  }
+
+  return existingDatasets.some((dataset) => {
+    const existingFallbackFingerprint = `${dataset.fileName}__${dataset.fileSize}`;
+
+    return (
+      dataset.fingerprint === strictFingerprint ||
+      dataset.fingerprint === fallbackFingerprint ||
+      existingFallbackFingerprint === fallbackFingerprint ||
+      (dataset.fileName === file.name && dataset.fileSize === file.size) ||
+      (dataset.fileName === file.name &&
+        dataset.lastModified !== 0 &&
+        dataset.lastModified === file.lastModified)
+    );
+  });
+}
+
 export default function OnTrackApp() {
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [datasets, setDatasets] = useState<UploadedDataset[]>([]);
@@ -510,8 +528,8 @@ export default function OnTrackApp() {
             id: row.id,
             fileName: row.file_name,
             fileSize: data.size ?? 0,
-            lastModified: Date.now(),
-            fingerprint: `${row.file_name}-${row.storage_path}`,
+            lastModified: 0,
+            fingerprint: `${row.file_name}__${data.size ?? 0}`,
             students,
           });
         } catch (err) {
@@ -530,114 +548,131 @@ export default function OnTrackApp() {
   }, [user]);
 
   async function handleFilesUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    if (!files.length) return;
+  const files = Array.from(event.target.files ?? []);
+  if (!files.length) return;
 
-    setError("");
-    setDuplicateNotice([]);
+  setError("");
+  setDuplicateNotice([]);
 
-    const newDatasets: Dataset[] = [];
-    const skippedDuplicates: string[] = [];
-    const uploadFailures: string[] = [];
-    
-    for (const file of files) {
-      const fingerprint = `${file.name}__${file.size}__${file.lastModified}`;
-    
-      const alreadyExists = datasets.some(
-        (dataset) => dataset.fingerprint === fingerprint
-      );
-    
-      if (alreadyExists) {
-        skippedDuplicates.push(file.name);
+  const newDatasets: UploadedDataset[] = [];
+  const skippedDuplicates: string[] = [];
+  const uploadFailures: string[] = [];
+
+  const seenInThisBatch = new Set<string>();
+  const existingDatasetsSnapshot: UploadedDataset[] = [...datasets];
+
+  for (const file of files) {
+    const strictFingerprint = `${file.name}__${file.size}__${file.lastModified}`;
+    const fallbackFingerprint = `${file.name}__${file.size}`;
+
+    const alreadyExists = isDuplicateDatasetFile(
+      file,
+      existingDatasetsSnapshot,
+      seenInThisBatch
+    );
+
+    if (alreadyExists) {
+      skippedDuplicates.push(file.name);
+      continue;
+    }
+
+    seenInThisBatch.add(strictFingerprint);
+    seenInThisBatch.add(fallbackFingerprint);
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const firstSheetName = workbook.SheetNames[0];
+
+      if (!firstSheetName) {
+        uploadFailures.push(file.name);
         continue;
       }
-    
-      try {
-        const currentUser = user;
-      
-        let filePath: string | null = null;
-      
-        if (currentUser) {
-          filePath = `${Date.now()}-${file.name}`;
-      
-          const { data: uploadData, error: uploadError } = await supabase.storage
-            .from("uploads")
-            .upload(filePath, file, { upsert: false });
-      
-          if (uploadError) {
-            alert("UPLOAD FAILED: " + uploadError.message);
-            console.error(uploadError);
-            uploadFailures.push(file.name);
-            continue;
-          }
-      
-          const { error: dbError } = await supabase.from("datasets").insert({
-            user_id: currentUser.id,
-            file_name: file.name,
-            storage_path: filePath,
-          });
-      
-          if (dbError) {
-            alert("DATABASE SAVE FAILED: " + dbError.message);
-            console.error(dbError);
-          }
-      
-          console.log("Uploaded to Supabase:", uploadData);
-        }
-      
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-      
-        if (!firstSheetName) continue;
-      
-        const worksheet = workbook.Sheets[firstSheetName];
-        const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
-      
-        if (!jsonRows.length) continue;
-      
-        const students = parseStudents(jsonRows, file.name);
-      
-        if (!students.length) continue;
-      
-        newDatasets.push({
-          id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          fileName: file.name,
-          fileSize: file.size,
-          lastModified: file.lastModified,
-          fingerprint,
-          students,
-          storagePath: filePath ?? undefined,
-        });
-      
-        if (currentUser) {
-          alert("SAVED TO ACCOUNT: " + file.name);
-        } else {
-          alert("LOADED IN GUEST MODE: " + file.name);
-        }
-      } catch (err) {
-        console.error("File processing failed:", err);
-        alert("Processing failed");
+
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonRows = XLSX.utils.sheet_to_json<RawRow>(worksheet, { defval: "" });
+
+      if (!jsonRows.length) {
         uploadFailures.push(file.name);
+        continue;
       }
-    }
 
-    if (newDatasets.length) {
-      setDatasets((prev) => {
-        const updated = [...prev, ...newDatasets];
-        if (!selectedId && updated[0]?.students[0]?.id) {
-          setSelectedId(updated[0].students[0].id);
+      const students = parseStudents(jsonRows, file.name);
+
+      if (!students.length) {
+        uploadFailures.push(file.name);
+        continue;
+      }
+
+      if (user) {
+        const filePath = `excel/${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}-${file.name}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("uploads")
+          .upload(filePath, file, { upsert: false });
+
+        if (uploadError) {
+          console.error("UPLOAD FAILED:", uploadError);
+          uploadFailures.push(file.name);
+          continue;
         }
-        return updated;
-      });
 
-      if (viewMode === "single" && activeDatasetId === "all") {
-        setActiveDatasetId(newDatasets[0].id);
+        const { error: dbError } = await supabase.from("datasets").insert({
+          user_id: user.id,
+          file_name: file.name,
+          storage_path: filePath,
+        });
+
+        if (dbError) {
+          console.error("DATABASE SAVE FAILED:", dbError);
+        }
       }
-    }
 
-    event.target.value = "";
+      const createdDataset: UploadedDataset = {
+        id: `${file.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        fileName: file.name,
+        fileSize: file.size,
+        lastModified: file.lastModified,
+        fingerprint: strictFingerprint,
+        students,
+      };
+
+      newDatasets.push(createdDataset);
+      existingDatasetsSnapshot.push(createdDataset);
+    } catch (err) {
+      console.error("File processing failed:", err);
+      uploadFailures.push(file.name);
+    }
   }
+
+  if (newDatasets.length) {
+    setDatasets((prev) => {
+      const updated = [...prev, ...newDatasets];
+
+      if (!selectedId && updated[0]?.students[0]?.id) {
+        setSelectedId(updated[0].students[0].id);
+      }
+
+      return updated;
+    });
+
+    if (viewMode === "single" && activeDatasetId === "all") {
+      setActiveDatasetId(newDatasets[0].id);
+    }
+  }
+
+  if (skippedDuplicates.length) {
+    setDuplicateNotice(skippedDuplicates);
+  }
+
+  if (uploadFailures.length) {
+    setError(`Could not process: ${uploadFailures.join(", ")}`);
+  }
+
+  event.target.value = "";
+}
 
   function deleteDataset(datasetId: string) {
     const dataset = datasets.find((item) => item.id === datasetId);
@@ -964,55 +999,33 @@ export default function OnTrackApp() {
           />
         </div>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_1fr]">
-          <Card className="rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <Card className="min-w-0 rounded-[24px] border border-slate-200 bg-white shadow-sm">
             <CardHeader>
               <CardTitle>Support distribution</CardTitle>
               <CardDescription>Low, moderate, and high support need</CardDescription>
             </CardHeader>
-            <CardContent className="h-[320px]">
+            <CardContent className="h-[320px] min-w-0">
               {visibleStudents.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      outerRadius={100}
-                      innerRadius={55}
-                      paddingAngle={4}
-                    >
-                      {pieData.map((_, index) => (
-                        <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500">
-                  Upload files to see charts
+                <div className="h-full w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        outerRadius={100}
+                        innerRadius={55}
+                        paddingAngle={4}
+                      >
+                        {pieData.map((_, index) => (
+                          <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[24px] border border-slate-200 bg-white shadow-sm">
-            <CardHeader>
-              <CardTitle>Average risk by grade</CardTitle>
-              <CardDescription>Where support need is clustering</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[320px]">
-              {visibleStudents.length ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="grade" />
-                    <YAxis domain={[0, 100]} />
-                    <Tooltip />
-                    <Bar dataKey="avgRisk" radius={[10, 10, 0, 0]} fill="#111827" />
-                  </BarChart>
-                </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500">
                   Upload files to see charts
