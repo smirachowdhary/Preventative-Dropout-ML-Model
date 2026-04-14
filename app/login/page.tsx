@@ -81,17 +81,25 @@ export default function LoginPage() {
 
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
+        const res = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
         });
 
-        if (error) {
-          setErrorMessage(error.message);
+        const result = await res.json();
+
+        if (!res.ok) {
+          setErrorMessage(result.error || "Signup failed.");
           return;
         }
 
-        setMessage("Signup successful. Check your email if confirmation is enabled.");
+        setMessage(result.message || "Signup successful.");
         return;
       }
 
