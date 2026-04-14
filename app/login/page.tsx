@@ -106,7 +106,7 @@ export default function LoginPage() {
           return;
         }
 
-        setMessage(result.message || "Signup successful.");
+        setMessage(result.message || "Signup successful. Check your email for the conformation so you can start using this website with saving data enabled.");
         return;
       }
 
