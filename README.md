@@ -1,36 +1,94 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+# Preventative Dropout Early Warning System
+Project Link: https://preventative-dropout-ml-model.vercel.app/
 
-First, run the development server:
+## Overview
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+The Preventative Dropout Early Warning System is a web-based application designed to help educators identify at-risk students through structured data analysis. By enabling early detection of potential risk factors such as attendance, academic performance, and behavioral indicators, the system supports timely intervention and improved student outcomes.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Purpose
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The primary objectives of this system are:
 
-## Learn More
+- To identify students at risk of dropping out at an early stage  
+- To provide educators with data-driven insights  
+- To support proactive intervention strategies  
+- To organize and track student-specific observations and actions  
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Data Upload and Management
+- Upload Excel files (`.xlsx`) containing student data  
+- Support for multiple file uploads  
+- Automatic parsing and structuring of student records  
+- Duplicate file detection using file fingerprinting  
+- Ability to delete uploaded datasets  
 
-## Deploy on Vercel
+### Student Risk Analysis
+- Evaluation of key indicators such as:
+  - Attendance  
+  - Academic performance  
+  - Behavioral data  
+- Classification of students into risk categories (e.g., low, moderate, high)  
+- Structured display of student-level insights  
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Notes and Tracking
+- Ability to add and manage notes for individual students  
+- Organized tracking of interventions and observations  
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### User Interface
+- Dashboard-based layout for clarity and usability  
+- Tab-based navigation for managing datasets and views  
+- Structured presentation of data for ease of interpretation  
+
+### Authentication
+- Secure user authentication using Supabase  
+- Email and password-based login system  
+- Password reset functionality via email  
+
+---
+
+## Technology Stack
+
+| Layer        | Technology                |
+|--------------|--------------------------|
+| Frontend     | Next.js (App Router)     |
+| Backend      | Supabase (Auth, Database)|
+| Deployment   | Vercel                   |
+| Data Parsing | SheetJS (xlsx)           |
+| Styling      | Tailwind CSS             |
+
+---
+
+## System Workflow
+
+1. **Data Upload**  
+   Users upload Excel files containing student data.
+
+2. **Data Processing**  
+   The system parses the uploaded files and extracts relevant fields.  
+   Risk indicators are evaluated and used to classify students.
+
+3. **Data Storage**  
+   Data is maintained per user session, with optional persistence via Supabase.
+
+4. **Visualization**  
+   The dashboard displays student information, categorized risk levels, and notes.
+
+5. **Intervention**  
+   Educators can review insights, add notes, and take appropriate action.
+
+---
+
+## Authentication Flow (Supabase)
+
+### Password Reset Example
+
+```ts
+await supabase.auth.resetPasswordForEmail(email, {
+  redirectTo: `${window.location.origin}/login?mode=reset`,
+});
