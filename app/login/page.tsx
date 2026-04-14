@@ -92,10 +92,17 @@ export default function LoginPage() {
           }),
         });
 
-        const result = await res.json();
+        const text = await res.text();
+        const result = text ? JSON.parse(text) : {};
 
         if (!res.ok) {
-          setErrorMessage(result.error || "Signup failed.");
+          setErrorMessage(
+            result.error ||
+              result.msg ||
+              result.message ||
+              JSON.stringify(result) ||
+              `Signup failed (${res.status})`
+          );
           return;
         }
 
