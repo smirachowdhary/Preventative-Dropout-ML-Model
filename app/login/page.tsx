@@ -106,7 +106,21 @@ export default function LoginPage() {
           return;
         }
 
-        setMessage(result.message || "Signup successful. Check your email for the conformation so you can start using this website with saving data enabled.");
+        setMessage(
+          result.message ||
+            "Signup successful. Check your email for the conformation so you can start using this website with saving data enabled."
+        );
+
+        await fetch(`${window.location.origin}/api/send-email`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+          }),
+        });
+
         return;
       }
 
