@@ -145,13 +145,8 @@ export default function LoginPage() {
           return;
         }
 
-        const redirectTo =
-          typeof window !== "undefined"
-            ? `${window.location.origin}/login?mode=reset`
-            : undefined;
-
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo,
+          redirectTo: `${window.location.origin}/login?mode=reset`,
         });
 
         if (error) {
