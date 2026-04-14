@@ -81,46 +81,19 @@ export default function LoginPage() {
 
     try {
       if (mode === "signup") {
-        const res = await fetch(`${window.location.origin}/api/auth/signup`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            password,
-          }),
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
         });
 
-        const text = await res.text();
-        const result = text ? JSON.parse(text) : {};
-
-        if (!res.ok) {
-          setErrorMessage(
-            result.error ||
-              result.msg ||
-              result.message ||
-              JSON.stringify(result) ||
-              `Signup failed (${res.status})`
-          );
+        if (error) {
+          setErrorMessage(error.message);
           return;
         }
 
         setMessage(
-          result.message ||
-            "Signup successful. Check your email for the conformation so you can start using this website with saving data enabled."
+          "Signup successful. Check your email for the confirmation so you can start using this website with saving data enabled."
         );
-
-        await fetch(`${window.location.origin}/api/send-email`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-          }),
-        });
-
         return;
       }
 
